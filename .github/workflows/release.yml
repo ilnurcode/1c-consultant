@@ -52,6 +52,7 @@ jobs:
         shell: bash
         run: |
           python -m pip install pyinstaller==6.15.0
+          python -m pip install -e .
           version="$(python -c 'import json; print(json.load(open("PACKAGE_MANIFEST.json", encoding="utf-8"))["application_version"])')"
           python scripts/build_application.py \
             --platform "${{ matrix.platform }}" \

@@ -74,6 +74,8 @@ def main() -> int:
     command = [
         sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile",
         "--name", "consultant", "--paths", str(root / "src"),
+        "--collect-all", "playwright",
+        "--hidden-import", "playwright.sync_api",
         "--distpath", str(dist),
         "--workpath", str(root / "build" / f"pyinstaller-{args.platform}-{args.arch}"),
         "--specpath", str(root / "build"),

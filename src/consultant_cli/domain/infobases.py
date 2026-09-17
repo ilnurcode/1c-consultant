@@ -39,7 +39,7 @@ class InfobaseConfig:
     auth_type: str = "basic"  # "basic" | "windows" | "anonymous"
     description: str = ""
     is_active: bool = False
-    browser_type: str = "chromium"
+    browser_type: str = "msedge"
     headless: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -71,7 +71,7 @@ class InfobaseConfig:
             auth_type=str(data.get("auth_type", "basic")),
             description=str(data.get("description", "")),
             is_active=bool(data.get("is_active", False)),
-            browser_type=str(data.get("browser_type", "chromium")),
+            browser_type=str(data.get("browser_type", "msedge")),
             headless=bool(data.get("headless", False)),
         )
 
@@ -120,6 +120,9 @@ class InfobaseManager:
     def add_or_update(self, config: InfobaseConfig) -> None:
         bases = self.load_all()
         found = False
+        if config.is_active:
+            for b in bases:
+                b.is_active = False
         for i, b in enumerate(bases):
             if b.name.casefold() == config.name.casefold():
                 bases[i] = config
@@ -130,6 +133,8 @@ class InfobaseManager:
             if not bases:
                 config.is_active = True
             bases.append(config)
+        if bases and not any(b.is_active for b in bases):
+            bases[0].is_active = True
         self.save_all(bases)
 
     def set_active(self, name: str) -> bool:

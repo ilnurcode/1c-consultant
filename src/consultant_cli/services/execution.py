@@ -159,27 +159,96 @@ class ExecutionTools:
 
 
 class ExecutorService:
-    """Executes generated instructions step by step in 1C using Agent loop."""
+    """Executes generated instructions step by step in 1C using an AI ReAct loop."""
 
-    def __init__(self, base_config: InfobaseConfig) -> None:
+    def __init__(self, base_config: InfobaseConfig, agent_service: Any | None = None, agent_profile: str = "") -> None:
         self.tools = ExecutionTools(base_config)
+        self.agent_service = agent_service
+        self.agent_profile = agent_profile
 
-    def execute_instruction(self, instruction_text: str) -> dict[str, Any]:
+    def _decision_schema(self) -> dict[str, Any]:
+        tool_names = [item["name"] for item in self.tools.get_definitions()]
+        return {
+            "type": "object",
+            "properties": {
+                "thought": {"type": "string"},
+                "tool": {"type": "string", "enum": [*tool_names, "done", "fail"]},
+                "arguments": {"type": "object"},
+                "message": {"type": "string"},
+            },
+            "required": ["thought", "tool", "arguments", "message"],
+            "additionalProperties": False,
+        }
+
+    def _agent_decide(self, instruction_text: str, screen_state: Any, logs: list[str]) -> dict[str, Any]:
+        if not self.agent_service:
+            raise RuntimeError("AI-подключение не передано в ExecutorService.")
+        profile = self.agent_service.get_profile(self.agent_profile or None)
+        prompt = f"""
+Ты агент-исполнитель консультанта 1С. Нужно выполнить инструкцию в веб-клиенте 1С.
+
+Правила:
+- Действуй маленькими шагами: сначала смотри экран, затем кликай/заполняй/проверяй.
+- Для быстрых проверок справочников и документов используй OData.
+- Не выдумывай селекторы. Для browser_click используй видимый текст элемента из screen_state.
+- Если данных недостаточно или действие опасное — верни tool='fail' с причиной.
+- Если инструкция полностью выполнена — верни tool='done'.
+
+Доступные инструменты:
+{json.dumps(self.tools.get_definitions(), ensure_ascii=False, indent=2)}
+
+Инструкция:
+{instruction_text[:12000]}
+
+Текущее состояние экрана 1С (видимые интерактивные элементы):
+{json.dumps(screen_state, ensure_ascii=False, default=str)[:12000]}
+
+Журнал уже выполненных шагов:
+{json.dumps(logs[-20:], ensure_ascii=False, indent=2)}
+
+Ответь строго JSON по схеме. Выбери ровно один следующий инструмент.
+"""
+        return self.agent_service.generate(profile, prompt, self._decision_schema())
+
+    def execute_instruction(self, instruction_text: str, max_steps: int = 20) -> dict[str, Any]:
         """Runs the ReAct execution loop for the instruction."""
         logger.info(f"Starting execution for base: {self.tools.config.name}")
-        logs = []
+        logs: list[str] = []
         try:
-            # Step 1: Open 1C Web Client
             if self.tools.config.web_url:
                 logs.append(f"Opening Web Client: {self.tools.config.web_url}")
                 nav_res = self.tools.call_tool("browser_navigate", {})
-                logs.append(f"Connected: {nav_res.get('title')}")
+                logs.append(f"Connected: {nav_res.get('title') or nav_res.get('url')}")
+            else:
+                logs.append("Web URL is not configured; only OData tools are available.")
 
-            # Return execution status summary
+            if not self.agent_service:
+                return {
+                    "ok": False,
+                    "base": self.tools.config.name,
+                    "error": "AI не подключён к исполнителю. Подключите AI в меню, затем повторите выполнение.",
+                    "logs": logs,
+                }
+
+            for step in range(1, max_steps + 1):
+                screen_state = self.tools.call_tool("browser_get_screen_state", {}) if self.tools.config.web_url else []
+                decision = self._agent_decide(instruction_text, screen_state, logs)
+                tool = str(decision.get("tool", "fail"))
+                arguments = decision.get("arguments") or {}
+                message = str(decision.get("message", ""))
+                logs.append(f"Step {step}: {tool} {json.dumps(arguments, ensure_ascii=False)} — {message}")
+
+                if tool == "done":
+                    return {"ok": True, "base": self.tools.config.name, "steps_completed": True, "logs": logs}
+                if tool == "fail":
+                    return {"ok": False, "base": self.tools.config.name, "error": message or "Agent failed", "logs": logs}
+                result = self.tools.call_tool(tool, arguments)
+                logs.append(f"Step {step} result: {json.dumps(result, ensure_ascii=False, default=str)[:2000]}")
+
             return {
-                "ok": True,
+                "ok": False,
                 "base": self.tools.config.name,
-                "steps_completed": True,
+                "error": f"Достигнут лимит шагов ({max_steps}); выполнение остановлено для безопасности.",
                 "logs": logs,
             }
         except Exception as e:

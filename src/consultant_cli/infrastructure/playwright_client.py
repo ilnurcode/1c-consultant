@@ -55,8 +55,24 @@ class Playwright1CClient:
     def start(self) -> None:
         from playwright.sync_api import sync_playwright
         self._playwright = sync_playwright().start()
-        launcher = getattr(self._playwright, self.browser_type, self._playwright.chromium)
-        self._browser = launcher.launch(headless=self.headless)
+        browser_name = (self.browser_type or "chromium").lower()
+        launch_kwargs: dict[str, Any] = {"headless": self.headless}
+        if browser_name == "msedge":
+            launcher = self._playwright.chromium
+            launch_kwargs["channel"] = "msedge"
+        elif browser_name in {"chromium", "firefox", "webkit"}:
+            launcher = getattr(self._playwright, browser_name)
+        else:
+            launcher = self._playwright.chromium
+        try:
+            self._browser = launcher.launch(**launch_kwargs)
+        except Exception as exc:
+            raise RuntimeError(
+                "Не удалось запустить браузер Playwright. "
+                "Для автономного EXE рекомендуется выбрать browser=msedge (если Microsoft Edge установлен) "
+                "или установить браузеры командой: python -m playwright install chromium. "
+                f"Исходная ошибка: {exc}"
+            ) from exc
         self._context = self._browser.new_context(
             viewport={"width": 1440, "height": 900},
             locale="ru-RU",
@@ -187,11 +203,14 @@ class Playwright1CClient:
             return {"status": "clicked", "target": text_or_selector, "strategy": "contains_text"}
 
         # Strategy 3: CSS / XPath selector
-        loc = p.locator(text_or_selector).first
-        if loc.is_visible():
-            loc.click()
-            p.wait_for_timeout(500)
-            return {"status": "clicked", "target": text_or_selector, "strategy": "selector"}
+        try:
+            loc = p.locator(text_or_selector).first
+            if loc.is_visible():
+                loc.click()
+                p.wait_for_timeout(500)
+                return {"status": "clicked", "target": text_or_selector, "strategy": "selector"}
+        except Exception:
+            pass
 
         raise ValueError(f"Could not find visible element to click: '{text_or_selector}'")
 
@@ -206,10 +225,13 @@ class Playwright1CClient:
         except Exception:
             pass
 
-        loc = p.locator(selector_or_label).first
-        if loc.is_visible():
-            loc.fill(value)
-            return {"status": "filled", "field": selector_or_label, "value": value}
+        try:
+            loc = p.locator(selector_or_label).first
+            if loc.is_visible():
+                loc.fill(value)
+                return {"status": "filled", "field": selector_or_label, "value": value}
+        except Exception:
+            pass
 
         raise ValueError(f"Could not find visible input field: '{selector_or_label}'")
 

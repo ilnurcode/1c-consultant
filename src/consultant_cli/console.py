@@ -1111,7 +1111,7 @@ def execute_project_in_1c(app: Application, project_id: str) -> None:
             f"Веб-клиент: {active.web_url or 'не указан'}",
             f"OData: {active.odata_url or 'не указан'}",
             f"Пользователь: {active.username or 'не указан'}",
-            "Браузер: Playwright Chromium (авто-вход в 1С)",
+            f"Браузер: Playwright {active.browser_type} (авто-вход в 1С)",
         ],
         "cyan",
     )
@@ -1120,7 +1120,7 @@ def execute_project_in_1c(app: Application, project_id: str) -> None:
 
     with ui.spinner("Запускаю Playwright и подключение к 1С"):
         from consultant_cli.services.execution import ExecutorService
-        executor = ExecutorService(active)
+        executor = ExecutorService(active, app.agents)
         result = executor.execute_instruction(instruction_path.read_text(encoding="utf-8"))
 
     if result.get("ok"):

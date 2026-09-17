@@ -21,3 +21,5 @@ node_modules/
 /metadata/cache/
 /metadata/index/*.ndjson
 /metadata/index/failures.json
+
+/results/

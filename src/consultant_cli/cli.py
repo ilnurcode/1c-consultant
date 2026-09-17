@@ -245,7 +245,7 @@ def parser() -> argparse.ArgumentParser:
     b_add.add_argument("--auth-type", choices=["basic", "windows", "anonymous"], default="basic")
     b_add.add_argument("--desc", dest="description", default="", help="Описание информационной базы")
     b_add.add_argument("--headless", action="store_true", help="Запускать браузер в фоновом режиме")
-    b_add.add_argument("--browser", choices=["chromium", "firefox", "webkit", "msedge"], default="chromium")
+    b_add.add_argument("--browser", choices=["msedge", "chromium", "firefox", "webkit"], default="msedge")
     b_add.add_argument("--active", action="store_true", help="Сделать активной по умолчанию")
 
     b_use = base_commands.add_parser("use", help="Выбрать активную базу")
@@ -537,7 +537,7 @@ def dispatch_execute(app, args) -> Any:
             raise ValueError(f"Инструкция для проекта {args.project_id} не найдена в {project_dir}")
 
     from consultant_cli.services.execution import ExecutorService
-    executor = ExecutorService(cfg)
+    executor = ExecutorService(cfg, app.agents)
     return executor.execute_instruction(instruction_text)
 
 
