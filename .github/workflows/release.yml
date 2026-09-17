@@ -1,222 +1,90 @@
-name: publish release
+name: build Windows application
 
 on:
   push:
+    branches:
+      - master
+      - main
     tags:
       - "v*"
   workflow_dispatch:
-    inputs:
-      version:
-        description: "Application version from PACKAGE_MANIFEST.json"
-        required: true
-        type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
-  cancel-in-progress: false
+  group: windows-build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-application:
-    name: application ${{ matrix.platform }}-${{ matrix.arch }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: windows-latest
-            platform: windows
-            arch: x64
-          - runner: ubuntu-24.04
-            platform: linux
-            arch: x64
-          - runner: ubuntu-24.04-arm
-            platform: linux
-            arch: arm64
-          - runner: macos-15-intel
-            platform: macos
-            arch: x64
-          - runner: macos-15
-            platform: macos
-            arch: arm64
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
-      - name: Build native application package
-        shell: bash
-        run: |
-          python -m pip install pyinstaller==6.15.0
-          version="$(python -c 'import json; print(json.load(open("PACKAGE_MANIFEST.json", encoding="utf-8"))["application_version"])')"
-          python scripts/build_application.py \
-            --platform "${{ matrix.platform }}" \
-            --arch "${{ matrix.arch }}" \
-            --output "application-packages/1c-consultant-${version}-${{ matrix.platform }}-${{ matrix.arch }}.zip"
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: application-${{ matrix.platform }}-${{ matrix.arch }}
-          path: application-packages/*.zip
-          if-no-files-found: error
-
-      - uses: actions/setup-go@v7
-        if: matrix.platform == 'macos'
-        with:
-          go-version: "1.22.x"
-          cache: false
-
-      - name: Build unsigned macOS pkg
-        if: matrix.platform == 'macos'
-        shell: bash
-        run: |
-          version="$(python -c 'import json; print(json.load(open("PACKAGE_MANIFEST.json", encoding="utf-8"))["application_version"])')"
-          bash deployment/scripts/build-macos-pkg.sh \
-            "${{ matrix.arch }}" "$version" \
-            "macos-packages/1c-consultant-installer-macos-${{ matrix.arch }}.pkg"
-
-      - uses: actions/upload-artifact@v7
-        if: matrix.platform == 'macos'
-        with:
-          name: macos-pkg-${{ matrix.arch }}
-          path: macos-packages/*.pkg
-          if-no-files-found: error
-
-  release:
-    needs: build-application
+  build-windows:
     runs-on: windows-latest
-    env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
     steps:
-      - uses: actions/checkout@v6
-        with:
-          lfs: true
+      - name: Check out sources
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v7
-        with:
-          go-version: "1.22.x"
-          cache: false
-
-      - uses: actions/setup-python@v7
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
 
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: application-*
-          path: application-packages
-          merge-multiple: true
-
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: macos-pkg-*
-          path: release
-          merge-multiple: true
-
-      - name: Verify version and repository
+      - name: Read and verify version
+        id: meta
         shell: pwsh
         run: |
-          $package = Get-Content -Raw -LiteralPath PACKAGE_MANIFEST.json | ConvertFrom-Json
-          $expectedTag = "v$($package.application_version)"
-          if ($env:RELEASE_TAG -ne $expectedTag) {
-            throw "Release tag $env:RELEASE_TAG does not match PACKAGE_MANIFEST.json ($expectedTag)."
-          }
-          python scripts/validate_repository.py
-          if ($LASTEXITCODE -ne 0) { throw "Repository validation failed." }
-          "VERSION=$($package.application_version)" >> $env:GITHUB_ENV
-          "GRAPH_VERSION=$($package.configuration_pack.graph_version)" >> $env:GITHUB_ENV
-          "GRAPH_DATABASE_SHA256=$($package.configuration_pack.graph_database_sha256)" >> $env:GITHUB_ENV
-
-      - name: Download graph database
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          New-Item -ItemType Directory -Force -Path private-graph | Out-Null
-          $target = Join-Path $PWD "private-graph/erp_graph_mcp.sqlite"
-          $archive = Join-Path $env:RUNNER_TEMP "erp_graph_mcp.sqlite.zip"
-          gh release download "graph-v$env:GRAPH_VERSION" `
-            --repo "${{ github.repository }}" `
-            --pattern "erp_graph_mcp.sqlite.zip" `
-            --output $archive
-          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $archive -PathType Leaf)) {
-            throw "Graph release graph-v$env:GRAPH_VERSION does not contain erp_graph_mcp.sqlite.zip."
-          }
-          Expand-Archive -LiteralPath $archive -DestinationPath private-graph -Force
-          if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
-            throw "Graph archive does not contain erp_graph_mcp.sqlite."
-          }
-          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $target).Hash.ToLowerInvariant()
-          if ($actual -ne $env:GRAPH_DATABASE_SHA256.ToLowerInvariant()) {
-            throw "Graph database SHA-256 mismatch."
+          $manifest = Get-Content -Raw -LiteralPath PACKAGE_MANIFEST.json | ConvertFrom-Json
+          $version = $manifest.application_version
+          "version=$version" >> $env:GITHUB_OUTPUT
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Tag $env:GITHUB_REF_NAME must match PACKAGE_MANIFEST.json version v$version."
           }
 
-      - name: Build installer binaries
-        shell: pwsh
-        run: |
-          ./deployment/scripts/build-installers.ps1 -OutputDirectory release
-          python deployment/scripts/package_installers.py release
+      - name: Install build tools
+        run: python -m pip install --disable-pip-version-check pyinstaller==6.15.0
 
-      - name: Build application manifests and graph
-        shell: pwsh
-        env:
-          ERP_GRAPH_DATABASE: ${{ github.workspace }}/private-graph/erp_graph_mcp.sqlite
-        run: |
-          if (-not (Test-Path -LiteralPath $env:ERP_GRAPH_DATABASE -PathType Leaf)) {
-            throw "Graph database is absent. Download the private graph artifact before build-release.ps1."
-          }
-          $baseUrl = "https://github.com/${{ github.repository }}/releases/download/$env:RELEASE_TAG"
-          ./deployment/scripts/build-release.ps1 `
-            -BaseUrl $baseUrl `
-            -ApplicationDirectory application-packages `
-            -OutputDirectory release `
-            -GraphDatabase $env:ERP_GRAPH_DATABASE `
-            -GraphDatabaseSha256 $env:GRAPH_DATABASE_SHA256 `
-            -Python python `
-            -PythonArguments @()
+      - name: Validate sources
+        run: python scripts/validate_repository.py
 
-      - name: Build offline bundle
+      - name: Build EXE and portable ZIP
         shell: pwsh
         run: |
-          $bundle = Join-Path $env:RUNNER_TEMP "1c-consultant-offline-bundle"
-          New-Item -ItemType Directory -Force -Path `
-            (Join-Path $bundle "installer"), `
-            (Join-Path $bundle "application"), `
-            (Join-Path $bundle "graphs") | Out-Null
-          Copy-Item -LiteralPath release/manifest.json -Destination $bundle
-          Get-ChildItem -LiteralPath release -Filter "1c-consultant-installer-*" -File |
-            Copy-Item -Destination (Join-Path $bundle "installer")
-          Get-ChildItem -LiteralPath release -Filter "1c-consultant-setup-*" -File |
-            Copy-Item -Destination (Join-Path $bundle "installer")
-          Get-ChildItem -LiteralPath release -Filter "1c-consultant-$env:VERSION-*.zip" -File |
-            Copy-Item -Destination (Join-Path $bundle "application")
-          Get-ChildItem -LiteralPath release -Filter "erp-*-graph-*.zip" -File |
-            Copy-Item -Destination (Join-Path $bundle "graphs")
-          $offlineArchive = Join-Path release "1c-consultant-offline-bundle-$env:VERSION.zip"
-          Compress-Archive -Path (Join-Path $bundle "*") -DestinationPath $offlineArchive -CompressionLevel Optimal
-          Get-ChildItem -LiteralPath release -File | Where-Object Name -ne "SHA256SUMS" |
-            Sort-Object Name | ForEach-Object {
+          $version = "${{ steps.meta.outputs.version }}"
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          python scripts/build_application.py `
+            --platform windows `
+            --arch x64 `
+            --output "release/1c-consultant-$version-windows-x64.zip"
+          if ($LASTEXITCODE -ne 0) { throw "Application build failed." }
+          Copy-Item -LiteralPath dist/windows-x64/consultant.exe `
+            -Destination "release/1c-consultant-$version-windows-x64.exe"
+          Get-ChildItem -LiteralPath release -File |
+            Sort-Object Name |
+            ForEach-Object {
               "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant(), $_.Name
             } | Set-Content -Encoding ascii -LiteralPath release/SHA256SUMS
 
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 1c-consultant-windows-x64-${{ steps.meta.outputs.version }}
+          path: release/*
+          if-no-files-found: error
+
       - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $assets = @(Get-ChildItem -LiteralPath release -File | ForEach-Object FullName)
-          gh release view $env:RELEASE_TAG --repo "${{ github.repository }}" *> $null
+          gh release view $env:GITHUB_REF_NAME *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $env:RELEASE_TAG @assets --clobber --repo "${{ github.repository }}"
+            gh release upload $env:GITHUB_REF_NAME @assets --clobber
           } else {
-            gh release create $env:RELEASE_TAG @assets `
-              --repo "${{ github.repository }}" `
+            gh release create $env:GITHUB_REF_NAME @assets `
               --target $env:GITHUB_SHA `
-              --title "1C-Consultant $env:VERSION" `
+              --title "1C-Consultant ${{ steps.meta.outputs.version }}" `
               --generate-notes
           }
           if ($LASTEXITCODE -ne 0) { throw "GitHub Release publication failed." }
