@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from consultant_cli.domain.infobases import InfobaseManager
 from consultant_cli.infrastructure.settings import AppSettings, load_settings
 from consultant_cli.infrastructure.store import ProjectStore, RepositoryPaths
 from consultant_cli.services.agents import AgentService
@@ -28,6 +29,7 @@ class Application:
     analytics: AnalyticsService
     telemetry: TelemetryService
     migrations: MigrationService
+    infobases: InfobaseManager
 
 
 def build_application(start: Path | None = None) -> Application:
@@ -37,6 +39,7 @@ def build_application(start: Path | None = None) -> Application:
     agents = AgentService(paths, settings, paths.local_config)
     workflow = WorkflowService(paths, store, settings, agents)
     examples = ExampleRegistry(paths, store)
+    infobases = InfobaseManager()
     return Application(
         paths=paths,
         settings=settings,
@@ -49,4 +52,6 @@ def build_application(start: Path | None = None) -> Application:
         analytics=workflow.analytics,
         telemetry=workflow.telemetry,
         migrations=MigrationService(paths, store, workflow.analytics),
+        infobases=infobases,
     )
+

@@ -232,6 +232,35 @@ def parser() -> argparse.ArgumentParser:
     enable.add_argument("name")
     disable = agent_commands.add_parser("disable")
     disable.add_argument("name")
+
+    base = commands.add_parser("base", help="Управление информационными базами 1С")
+    base_commands = base.add_subparsers(dest="base_command", required=True)
+    base_commands.add_parser("list", help="Список настроенных баз")
+    b_add = base_commands.add_parser("add", help="Добавить информационную базу")
+    b_add.add_argument("name", help="Уникальное имя базы")
+    b_add.add_argument("--web-url", default="", help="URL веб-клиента 1С (http://...)")
+    b_add.add_argument("--odata-url", default="", help="URL стандартного интерфейса OData (http://.../odata/standard.odata)")
+    b_add.add_argument("--user", dest="username", default="", help="Имя пользователя 1С")
+    b_add.add_argument("--password", default="", help="Пароль пользователя 1С")
+    b_add.add_argument("--auth-type", choices=["basic", "windows", "anonymous"], default="basic")
+    b_add.add_argument("--desc", dest="description", default="", help="Описание информационной базы")
+    b_add.add_argument("--headless", action="store_true", help="Запускать браузер в фоновом режиме")
+    b_add.add_argument("--browser", choices=["chromium", "firefox", "webkit", "msedge"], default="chromium")
+    b_add.add_argument("--active", action="store_true", help="Сделать активной по умолчанию")
+
+    b_use = base_commands.add_parser("use", help="Выбрать активную базу")
+    b_use.add_argument("name")
+
+    b_del = base_commands.add_parser("delete", help="Удалить базу")
+    b_del.add_argument("name")
+
+    b_test = base_commands.add_parser("test", help="Проверить подключение к OData и Веб-клиенту")
+    b_test.add_argument("name", nargs="?", default="")
+
+    execute = commands.add_parser("execute", help="Выполнить сформированную инструкцию в базе 1С через Playwright и OData")
+    execute.add_argument("project_id", help="Идентификатор проекта")
+    execute.add_argument("--base", default="", help="Имя базы 1С (по умолчанию активная)")
+    execute.add_argument("--instruction-file", type=Path, help="Файл инструкции (опционально)")
     return root
 
 
@@ -436,7 +465,81 @@ def dispatch(app, args) -> Any:
         }
     if command == "agent":
         return dispatch_agent(app, args)
+    if command == "base":
+        return dispatch_base(app, args)
+    if command == "execute":
+        return dispatch_execute(app, args)
     raise ValueError(f"Неизвестная команда: {command}")
+
+
+def dispatch_base(app, args) -> Any:
+    cmd = args.base_command
+    if cmd == "list":
+        bases = app.infobases.load_all()
+        return [b.to_dict() for b in bases]
+    if cmd == "add":
+        from consultant_cli.domain.infobases import InfobaseConfig
+        cfg = InfobaseConfig(
+            name=args.name,
+            web_url=args.web_url,
+            odata_url=args.odata_url,
+            username=args.username,
+            password=args.password,
+            auth_type=args.auth_type,
+            description=args.description,
+            headless=args.headless,
+            browser_type=args.browser,
+            is_active=args.active,
+        )
+        app.infobases.add_or_update(cfg)
+        return {"added": args.name, "is_active": cfg.is_active}
+    if cmd == "use":
+        success = app.infobases.set_active(args.name)
+        if not success:
+            raise ValueError(f"База с именем '{args.name}' не найдена.")
+        return {"active_base": args.name}
+    if cmd == "delete":
+        success = app.infobases.delete(args.name)
+        return {"deleted": args.name, "success": success}
+    if cmd == "test":
+        base_name = args.name
+        cfg = app.infobases.get(base_name) if base_name else app.infobases.get_active()
+        if not cfg:
+            raise ValueError("Не указана и не найдена активная информационная база.")
+        res = {"base": cfg.name}
+        if cfg.odata_url:
+            from consultant_cli.infrastructure.odata_client import ODataClient
+            od = ODataClient(cfg.odata_url, cfg.username, cfg.password)
+            res["odata_test"] = od.test_connection()
+        else:
+            res["odata_test"] = {"configured": False}
+        res["web_client_url"] = cfg.web_url or "Not configured"
+        return res
+    raise ValueError(f"Неизвестная команда base: {cmd}")
+
+
+def dispatch_execute(app, args) -> Any:
+    base_name = args.base
+    cfg = app.infobases.get(base_name) if base_name else app.infobases.get_active()
+    if not cfg:
+        raise ValueError("Нет настроенных баз 1С. Добавьте базу командой `consultant base add`.")
+
+    instruction_text = ""
+    if args.instruction_file and args.instruction_file.is_file():
+        instruction_text = args.instruction_file.read_text(encoding="utf-8")
+    else:
+        project_dir = app.store.project_dir(args.project_id)
+        # Look for instruction markdown in project directory
+        candidates = list(project_dir.glob("*instruction*.md")) + list(project_dir.glob("*.md"))
+        if candidates:
+            instruction_text = candidates[0].read_text(encoding="utf-8")
+        else:
+            raise ValueError(f"Инструкция для проекта {args.project_id} не найдена в {project_dir}")
+
+    from consultant_cli.services.execution import ExecutorService
+    executor = ExecutorService(cfg)
+    return executor.execute_instruction(instruction_text)
+
 
 
 def dispatch_agent(app, args) -> Any:
