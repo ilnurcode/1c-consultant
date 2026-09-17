@@ -1,0 +1,4 @@
+# Codex is a thin interface for this repository.
+# Request path: consultant.cmd -> Python graph/runtime -> Wormsoft API roles.
+# MCP remains optional. Run `npm run mcp` when graph/project/OData tools are needed.
+# OData credentials are read only from ONEC_ODATA_* environment variables.

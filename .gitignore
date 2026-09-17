@@ -1,0 +1,23 @@
+.DS_Store
+__pycache__/
+*.pyc
+node_modules/
+# Локальные исходники, настройки и сборочные артефакты.
+/source/
+/local/
+/build/
+/dist/
+/application-packages/
+/release/
+/.cache/
+/.codegraph/
+/.tmp/
+/.venv/
+/consultant.local.toml
+/.env
+*.egg-info/
+/*.spec
+/metadata/raw/
+/metadata/cache/
+/metadata/index/*.ndjson
+/metadata/index/failures.json
