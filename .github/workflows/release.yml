@@ -137,7 +137,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path release | Out-Null
           ./deployment/scripts/build-installers.ps1 -OutputDirectory release
           python deployment/scripts/package_installers.py release
-          Copy-Item -LiteralPath application-packages/*.zip -Destination release -Force
+          Get-ChildItem -Path application-packages -Filter *.zip -Recurse -File | Copy-Item -Destination release -Force
           Get-ChildItem -LiteralPath release -File | Where-Object Name -ne "SHA256SUMS" |
             Sort-Object Name | ForEach-Object {
               "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant(), $_.Name
