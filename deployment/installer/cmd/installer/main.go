@@ -28,7 +28,7 @@ import (
 
 const (
 	installerVersion = "0.5.3"
-	defaultManifestURL = "https://github.com/ilnurcode/Modelirovanie/releases/latest/download/manifest.json"
+	defaultManifestURL = "https://github.com/ilnurcode/1c-consultant/releases/latest/download/manifest.json"
 )
 
 type Manifest struct {

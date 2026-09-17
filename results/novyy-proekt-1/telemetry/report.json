@@ -1,0 +1,18 @@
+{
+  "project_id": "novyy-proekt-1",
+  "budget": {
+    "target_completed_model_calls": 30,
+    "exceeded": false
+  },
+  "totals": {
+    "completed_model_calls": 1,
+    "failed_model_calls": 0,
+    "input_tokens": 9165,
+    "cached_input_tokens": 0,
+    "output_tokens": 532,
+    "reasoning_tokens": 0,
+    "model_time_ms": 4005,
+    "wall_time_ms": 4005
+  },
+  "explanation": "Целевой бюджет модельных вызовов соблюдён."
+}

@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0.0",
+  "project_id": "moy-proekt",
+  "product": "1С:ERP",
+  "release": "",
+  "source_hash": "b3680f2cba5f35d05b8dde72b8109a73216f60b0d3bc2208afc7ee07ba90f3a9",
+  "revision": 1,
+  "requirements": [],
+  "decisions": [],
+  "evidence": [],
+  "gaps": [],
+  "traceability": [],
+  "acceptance_tests": [],
+  "questions": [],
+  "solution_elements": [],
+  "instruction_steps": [],
+  "dirty_clusters": [],
+  "approvals": {
+    "requirements_revision": null,
+    "design_revision": null,
+    "final_revision": null
+  },
+  "checks": {
+    "schema_valid": false,
+    "modeler_passed": false
+  }
+}

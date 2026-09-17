@@ -1,0 +1,28 @@
+{
+  "elements": [
+    {
+      "id": "SOL-4d9583d132b1",
+      "cluster": "cluster-f6b2d205",
+      "requirement_ids": [
+        "REQ-92142a49fe7e"
+      ],
+      "description": "Операционный этап «cluster-f6b2d205»",
+      "requirement_statements": [
+        "Описание задачи"
+      ],
+      "evidence_ids": [
+        "EVD-fc73f8d1be4d",
+        "EVD-01bd88d693ab",
+        "EVD-3ae32efbaf80",
+        "EVD-4e996130c29c",
+        "EVD-071dcfdeea55",
+        "EVD-4798d626d4b9",
+        "EVD-a7bea0221e68",
+        "EVD-4972213a70e8"
+      ]
+    }
+  ],
+  "schema_version": "1.0.0",
+  "project_id": "novyy-proekt-1",
+  "revision": 1
+}
