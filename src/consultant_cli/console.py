@@ -91,10 +91,13 @@ def run_menu(app: Application) -> int:
             f"База: {app.paths.root}",
         )
         projects = app.store.list()
+        active_base = app.infobases.get_active()
+        active_base_name = active_base.name if active_base else "не выбрана"
         ui.panel(
             "Состояние",
             [
                 f"Проектов: {len(projects)}",
+                f"База 1С: {active_base_name}",
                 f"AI: {app.settings.default_agent or 'не подключён'}",
                 f"Интерфейс: {INTERFACES.get(app.settings.preferred_interface, 'встроенный')}",
                 "ERP XML: индекс 2.5.27.49 подключён",
@@ -105,9 +108,10 @@ def run_menu(app: Application) -> int:
             [
                 ("1", "Новый проект", "Мастер создания инструкции и схемы"),
                 ("2", "Мои проекты", "Выбрать существующий проект"),
-                ("3", "Подключить AI", "Настроить способ генерации"),
-                ("4", "Выбрать интерфейс", "Программа, Codex, OpenCode или Claude"),
-                ("5", "Система и справка", "База знаний, проверка и помощь"),
+                ("3", "Базы 1С", "Управление подключениями к веб-клиенту и OData"),
+                ("4", "Подключить AI", "Настроить способ генерации"),
+                ("5", "Выбрать интерфейс", "Программа, Codex, OpenCode или Claude"),
+                ("6", "Система и справка", "База знаний, проверка и помощь"),
                 ("0", "Выход", "Закрыть приложение"),
             ]
         )
@@ -124,10 +128,12 @@ def run_menu(app: Application) -> int:
             if project_id:
                 project_menu(app, project_id)
         elif choice == "3":
-            agent_menu(app)
+            infobases_menu(app)
         elif choice == "4":
-            interface_menu(app)
+            agent_menu(app)
         elif choice == "5":
+            interface_menu(app)
+        elif choice == "6":
             system_menu(app)
 
 
@@ -225,11 +231,12 @@ def project_menu(app: Application, project_id: str) -> None:
         ui.menu(
             [
                 ("1", primary_action_label(project), "Рекомендуемое следующее действие"),
-                ("2", "Материалы", "Инструкция, схема и источники"),
-                ("3", "Изменить", "Настройки или замечания"),
-                ("4", "Экспортировать", "Сохранить результат в файл"),
-                ("5", "Открыть во внешнем интерфейсе", INTERFACES.get(app.settings.preferred_interface, "Выбрать интерфейс")),
-                ("6", "Ещё", "Проверка и удаление"),
+                ("2", "Выполнить в 1С", "Автоматически занести данные через Playwright и OData"),
+                ("3", "Материалы", "Инструкция, схема и источники"),
+                ("4", "Изменить", "Настройки или замечания"),
+                ("5", "Экспортировать", "Сохранить результат в файл"),
+                ("6", "Открыть во внешнем интерфейсе", INTERFACES.get(app.settings.preferred_interface, "Выбрать интерфейс")),
+                ("7", "Ещё", "Проверка и удаление"),
                 ("0", "Назад", "Вернуться в главное меню"),
             ]
         )
@@ -240,16 +247,18 @@ def project_menu(app: Application, project_id: str) -> None:
             if choice == "1":
                 handle_primary_action(app, project_id)
             elif choice == "2":
-                project_materials_menu(app, project_id)
+                execute_project_in_1c(app, project_id)
             elif choice == "3":
-                project_changes_menu(app, project_id)
+                project_materials_menu(app, project_id)
             elif choice == "4":
+                project_changes_menu(app, project_id)
+            elif choice == "5":
                 fmt = ask("Формат md/json/html", "html")
                 with ui.spinner("Готовлю экспорт"):
                     path = app.exports.export(project_id, fmt)
                 ui.success(f"Экспорт готов: {path}")
                 ui.pause()
-            elif choice == "5":
+            elif choice == "6":
                 if app.settings.preferred_interface == "builtin":
                     interface_menu(app)
                 if app.settings.preferred_interface != "builtin":
@@ -258,7 +267,7 @@ def project_menu(app: Application, project_id: str) -> None:
                     )
                     ui.info("Запущено: " + subprocess.list2cmdline(command))
                     ui.pause()
-            elif choice == "6":
+            elif choice == "7":
                 if project_more_menu(app, project_id):
                     return
         except Exception as exc:
@@ -921,3 +930,204 @@ def open_external_agent(
 def interface_available(app: Application, agent: str) -> bool:
     command_name = {"codex": "codex", "claude": "claude", "opencode": "opencode"}.get(agent)
     return bool(command_name and shutil.which(command_name))
+
+
+def infobases_menu(app: Application) -> None:
+    while True:
+        ui.clear()
+        ui.header("Информационные базы 1С", breadcrumb="Главное меню › Базы 1С")
+        bases = app.infobases.load_all()
+        active = app.infobases.get_active()
+        active_name = active.name if active else "не выбрана"
+        ui.panel(
+            "Текущее состояние",
+            [
+                f"Всего подключений: {len(bases)}",
+                f"Активная база: {active_name}",
+                "Активная база используется по умолчанию для Playwright и OData.",
+            ],
+            "cyan",
+        )
+        ui.menu(
+            [
+                ("1", "Список баз", "Посмотреть сохраненные подключения"),
+                ("2", "Добавить базу", "Настроить веб-клиент и OData"),
+                ("3", "Выбрать активную", "Сделать базу основной для работы"),
+                ("4", "Проверить подключение", "Тест доступности веб-сервера и OData"),
+                ("5", "Удалить базу", "Убрать подключение из списка"),
+                ("0", "Назад", "Вернуться в главное меню"),
+            ]
+        )
+        choice = ask("Выберите действие")
+        if choice == "0":
+            return
+        if choice == "1":
+            show_infobases(app)
+        elif choice == "2":
+            add_infobase_wizard(app)
+        elif choice == "3":
+            choose_active_infobase(app)
+        elif choice == "4":
+            test_infobase_wizard(app)
+        elif choice == "5":
+            delete_infobase_wizard(app)
+
+
+def show_infobases(app: Application) -> None:
+    ui.clear()
+    ui.header("Список информационных баз", breadcrumb="Базы 1С › Список")
+    bases = app.infobases.load_all()
+    if not bases:
+        ui.warning("Подключений пока нет. Добавьте базу через пункт 2.")
+        ui.pause()
+        return
+    rows = [
+        [
+            index,
+            b.name + (" (активная)" if b.is_active else ""),
+            b.web_url or "—",
+            b.odata_url or "—",
+            b.username or "—",
+        ]
+        for index, b in enumerate(bases, 1)
+    ]
+    ui.table(["№", "Имя базы", "Веб-клиент", "OData URL", "Пользователь"], rows)
+    ui.pause()
+
+
+def add_infobase_wizard(app: Application) -> None:
+    ui.clear()
+    ui.header("Добавление базы 1С", breadcrumb="Базы 1С › Добавить")
+    from consultant_cli.domain.infobases import InfobaseConfig
+
+    name = ask_required("Имя базы (например: Тестовая ERP)")
+    web_url = ask("URL веб-клиента 1С (например: http://localhost/erp)")
+    odata_url = ask("URL OData (например: http://localhost/erp/odata/standard.odata)")
+    username = ask("Имя пользователя 1С (логин)")
+    password = ask("Пароль пользователя 1С")
+    headless = yes_no("Запускать браузер скрытно (без окна)", False)
+    active = yes_no("Сделать эту базу активной по умолчанию", True)
+
+    cfg = InfobaseConfig(
+        name=name,
+        web_url=web_url,
+        odata_url=odata_url,
+        username=username,
+        password=password,
+        headless=headless,
+        is_active=active,
+    )
+    app.infobases.add_or_update(cfg)
+    ui.success(f"База «{name}» успешно сохранена.")
+    ui.pause()
+
+
+def choose_active_infobase(app: Application) -> None:
+    ui.clear()
+    ui.header("Выбор активной базы 1С", breadcrumb="Базы 1С › Выбрать активную")
+    bases = app.infobases.load_all()
+    if not bases:
+        ui.warning("Нет сохраненных баз.")
+        ui.pause()
+        return
+    rows = [
+        [index, b.name, "ДА" if b.is_active else "нет", b.web_url or "—"]
+        for index, b in enumerate(bases, 1)
+    ]
+    ui.table(["№", "Имя базы", "Активная", "URL веб-клиента"], rows)
+    val = ask("Введите номер базы для активации (или 0 для отмены)")
+    if val.isdigit() and 1 <= int(val) <= len(bases):
+        selected = bases[int(val) - 1].name
+        app.infobases.set_active(selected)
+        ui.success(f"База «{selected}» теперь активна.")
+    ui.pause()
+
+
+def test_infobase_wizard(app: Application) -> None:
+    ui.clear()
+    ui.header("Проверка подключения к 1С", breadcrumb="Базы 1С › Тест")
+    active = app.infobases.get_active()
+    if not active:
+        ui.warning("Нет активной базы. Сначала добавьте или выберите базу.")
+        ui.pause()
+        return
+    ui.info(f"Тестирую подключение к базе: {active.name}")
+    if active.odata_url:
+        with ui.spinner("Отправляю запрос к OData $metadata"):
+            from consultant_cli.infrastructure.odata_client import ODataClient
+            client = ODataClient(active.odata_url, active.username, active.password)
+            res = client.test_connection()
+        if res.get("ok"):
+            ui.success(f"OData доступен! Статус HTTP {res.get('status_code')}")
+        else:
+            ui.error(f"OData ошибка: {res.get('error')}")
+    else:
+        ui.warning("OData URL не заполнен для этой базы.")
+
+    if active.web_url:
+        ui.info(f"URL веб-клиента: {active.web_url}")
+    ui.pause()
+
+
+def delete_infobase_wizard(app: Application) -> None:
+    ui.clear()
+    ui.header("Удаление базы 1С", breadcrumb="Базы 1С › Удалить")
+    bases = app.infobases.load_all()
+    if not bases:
+        ui.warning("Список баз пуст.")
+        ui.pause()
+        return
+    rows = [[index, b.name, b.web_url or "—"] for index, b in enumerate(bases, 1)]
+    ui.table(["№", "Имя базы", "Веб-клиент"], rows)
+    val = ask("Введите номер базы для удаления (или 0 для отмены)")
+    if val.isdigit() and 1 <= int(val) <= len(bases):
+        name = bases[int(val) - 1].name
+        if yes_no(f"Вы точно хотите удалить базу «{name}»", False):
+            app.infobases.delete(name)
+            ui.success(f"База «{name}» удалена.")
+    ui.pause()
+
+
+def execute_project_in_1c(app: Application, project_id: str) -> None:
+    ui.clear()
+    ui.header("Выполнение в 1С", breadcrumb=f"Проект › {project_id} › Выполнить в 1С")
+    active = app.infobases.get_active()
+    if not active:
+        ui.error("Нет активной информационной базы 1С. Добавьте базу в разделе «Базы 1С».")
+        ui.pause()
+        return
+
+    instruction_path = app.store.artifact_path(project_id, "03-instruction.md")
+    if not instruction_path.exists():
+        ui.warning("Сначала сформируйте инструкцию по проекту (пункт 1 в меню проекта).")
+        ui.pause()
+        return
+
+    ui.panel(
+        "Параметры запуска",
+        [
+            f"Проект: {project_id}",
+            f"База 1С: {active.name}",
+            f"Веб-клиент: {active.web_url or 'не указан'}",
+            f"OData: {active.odata_url or 'не указан'}",
+            f"Пользователь: {active.username or 'не указан'}",
+            "Браузер: Playwright Chromium (авто-вход в 1С)",
+        ],
+        "cyan",
+    )
+    if not yes_no("Начать автоматическое внесение данных", True):
+        return
+
+    with ui.spinner("Запускаю Playwright и подключение к 1С"):
+        from consultant_cli.services.execution import ExecutorService
+        executor = ExecutorService(active)
+        result = executor.execute_instruction(instruction_path.read_text(encoding="utf-8"))
+
+    if result.get("ok"):
+        ui.success("Инструкция успешно передана на выполнение в 1С!")
+        for log_line in result.get("logs", []):
+            ui.info(f"  • {log_line}")
+    else:
+        ui.error(f"Ошибка при выполнении: {result.get('error')}")
+    ui.pause()
+
