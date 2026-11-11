@@ -112,6 +112,8 @@ def run_menu(app: Application) -> int:
                 ("4", "Подключить AI", "Настроить способ генерации"),
                 ("5", "Выбрать интерфейс", "Программа, Codex, OpenCode или Claude"),
                 ("6", "Система и справка", "База знаний, проверка и помощь"),
+                ("7", "Аудит кода 1С", "Поиск уязвимостей, дедлоков и ошибок в BSL"),
+                ("8", "Тестирование Веб-клиента", "Генерация и запуск Playwright тестов в 1С"),
                 ("0", "Выход", "Закрыть приложение"),
             ]
         )
@@ -135,6 +137,10 @@ def run_menu(app: Application) -> int:
             interface_menu(app)
         elif choice == "6":
             system_menu(app)
+        elif choice == "7":
+            scan_code_wizard(app)
+        elif choice == "8":
+            web_testing_wizard(app)
 
 
 def new_project_wizard(app: Application):
@@ -1131,3 +1137,113 @@ def execute_project_in_1c(app: Application, project_id: str) -> None:
         ui.error(f"Ошибка при выполнении: {result.get('error')}")
     ui.pause()
 
+
+
+def scan_code_wizard(app: Application) -> None:
+    ui.clear()
+    ui.header("Аудит кода 1С", "Поиск уязвимостей, блокировок и дефектов стандартов", "Главное меню › Сканирование")
+    path_str = ask("Путь к файлу BSL/OS/XML или каталогу конфигурации", ".")
+    target = Path(path_str).resolve()
+    if not target.exists():
+        ui.error(f"Путь не найден: {target}")
+        ask("Нажмите Enter для возврата")
+        return
+
+    with ui.spinner("Выполняю статический анализ и аудит безопасности..."):
+        if target.is_file():
+            issues = app.scanner.scan_file(target)
+            from consultant_cli.services.scanner.models import ScanSummary, Severity
+            sev_counts: dict[str, int] = {}
+            cat_counts: dict[str, int] = {}
+            for issue in issues:
+                sev_counts[issue.severity.value] = sev_counts.get(issue.severity.value, 0) + 1
+                cat_counts[issue.category.value] = cat_counts.get(issue.category.value, 0) + 1
+            summary = ScanSummary(
+                total_files=1,
+                total_issues=len(issues),
+                issues_by_severity=sev_counts,
+                issues_by_category=cat_counts,
+                passed=(sev_counts.get(Severity.CRITICAL.value, 0) == 0 and sev_counts.get(Severity.HIGH.value, 0) == 0),
+                issues=issues,
+            )
+        else:
+            summary = app.scanner.scan_directory(target)
+
+    report_text = app.scanner.format_text_report(summary)
+    ui.write(report_text)
+    ask("Нажмите Enter для возврата в меню")
+
+
+def web_testing_wizard(app: Application) -> None:
+    ui.clear()
+    ui.header("Тестирование 1С:Предприятие", "Playwright Web Client & OData", "Главное меню › Тестирование")
+    active_base = app.infobases.get_active()
+    if not active_base:
+        ui.warning("Активная информационная база 1С не выбрана. Сначала настройте базу в разделе 'Базы 1С'.")
+        ask("Нажмите Enter для возврата")
+        return
+
+    ui.info(f"Активная база: {active_base.name} ({active_base.web_url or 'Web URL не задан'})")
+    ui.menu([
+        ("1", "Сгенерировать тест документа", "Создание, заполнение и проведение документа"),
+        ("2", "Сгенерировать smoke-тест", "Проверка открытия списков и форм подсистемы"),
+        ("3", "Запустить тест из файла", "Выполнить сценарий (.json или .feature) в браузере"),
+        ("0", "Назад", "Вернуться в главное меню"),
+    ])
+    choice = ask("Выберите действие")
+    if choice == "1":
+        doc_name = ask("Имя документа (например, ЗаказКлиента)", "ЗаказКлиента")
+        subsystem = ask("Имя подсистемы (например, Продажи)", "Продажи")
+        from consultant_cli.services.testgen import WebTestGenerator
+        sc = WebTestGenerator.generate_document_test(doc_name, subsystem)
+        out_file = Path(f"./tests_{doc_name.lower()}.json")
+        out_file.write_text(json.dumps(sc.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        ui.success(f"Сценарий сохранён в файл: {out_file.resolve()}")
+        if yes_no("Запустить тест прямо сейчас в веб-клиенте?"):
+            _run_suite_in_ui(app, active_base, [sc])
+        else:
+            ask("Нажмите Enter для возврата")
+    elif choice == "2":
+        subsystem = ask("Имя подсистемы", "Продажи")
+        objs_str = ask("Объекты через запятую", "Справочник.Номенклатура, Документ.ЗаказКлиента")
+        objs = [o.strip() for o in objs_str.split(",") if o.strip()]
+        from consultant_cli.services.testgen import WebTestGenerator
+        suite = WebTestGenerator.generate_smoke_test(subsystem, objs)
+        out_file = Path(f"./smoke_{subsystem.lower()}.json")
+        out_file.write_text(json.dumps(suite.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        ui.success(f"Набор тестов сохранён в файл: {out_file.resolve()}")
+        if yes_no("Запустить тест прямо сейчас в веб-клиенте?"):
+            _run_suite_in_ui(app, active_base, suite.scenarios)
+        else:
+            ask("Нажмите Enter для возврата")
+    elif choice == "3":
+        file_path_str = ask("Путь к файлу теста (.json или .feature)")
+        f_path = Path(file_path_str).resolve()
+        if not f_path.is_file():
+            ui.error(f"Файл не найден: {f_path}")
+            ask("Нажмите Enter для возврата")
+            return
+        from consultant_cli.services.testgen import WebTestGenerator, WebTestSuite, WebTestScenario
+        if f_path.suffix.lower() == ".feature":
+            suite = WebTestGenerator.from_gherkin_text(f_path.read_text(encoding="utf-8"), suite_title=f_path.name)
+            scenarios = suite.scenarios
+        else:
+            data = json.loads(f_path.read_text(encoding="utf-8"))
+            if "scenarios" in data:
+                suite = WebTestSuite.from_dict(data)
+                scenarios = suite.scenarios
+            else:
+                scenarios = [WebTestScenario.from_dict(data)]
+        _run_suite_in_ui(app, active_base, scenarios)
+
+
+def _run_suite_in_ui(app: Application, base_config, scenarios) -> None:
+    from consultant_cli.services.testgen import WebTestSuite
+    from consultant_cli.services.testrunner import Playwright1CTestRunner
+    suite = WebTestSuite(id="ui_run", title="Запуск из меню", scenarios=scenarios)
+    runner = Playwright1CTestRunner(base_config)
+    with ui.spinner("Запускаю Playwright и выполняю тесты в 1С Web Client..."):
+        result = runner.run_suite(suite)
+    report_text = Playwright1CTestRunner.format_text_report(result)
+    ui.write(report_text)
+    ask("Нажмите Enter для возврата в меню")
