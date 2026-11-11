@@ -261,33 +261,7 @@ def parser() -> argparse.ArgumentParser:
     execute.add_argument("project_id", help="Идентификатор проекта")
     execute.add_argument("--base", default="", help="Имя базы 1С (по умолчанию активная)")
     execute.add_argument("--instruction-file", type=Path, help="Файл инструкции (опционально)")
-
-    # --- Scanner command ---
-    scan = commands.add_parser("scan", help="Сканировать код 1С на уязвимости, блокировки и дефекты")
-    scan.add_argument("path", type=Path, help="Путь к файлу BSL/OS/XML или каталогу конфигурации")
-    scan.add_argument("--format", choices=["text", "json", "sarif"], default="text", help="Формат отчёта")
-    scan.add_argument("--min-severity", choices=["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"], default="INFO", help="Минимальный уровень критичности")
-    scan.add_argument("--output", type=Path, help="Файл для сохранения отчёта")
-
-    # --- Test-Gen command ---
-    test_gen = commands.add_parser("test-gen", help="Сгенерировать тест Playwright для 1C Web Client")
-    test_gen.add_argument("--type", choices=["document", "smoke", "from-feature"], default="document", help="Тип генерируемого теста")
-    test_gen.add_argument("--metadata", default="", help="Имя объекта метаданных (например, Документ.ЗаказКлиента)")
-    test_gen.add_argument("--subsystem", default="", help="Имя подсистемы 1С (например, Продажи)")
-    test_gen.add_argument("--feature-file", type=Path, help="Путь к файлу .feature Gherkin (для типа from-feature)")
-    test_gen.add_argument("--output", type=Path, help="Путь к файлу для сохранения сценария (.json)")
-
-    # --- Test-Run command ---
-    test_run = commands.add_parser("test-run", help="Запустить сгенерированные тесты в веб-клиенте 1С через Playwright")
-    test_run.add_argument("--scenario", type=Path, help="Файл сценария или набора тестов (.json)")
-    test_run.add_argument("--feature", type=Path, help="Файл BDD .feature (автоматически конвертируется в шаги веб-теста)")
-    test_run.add_argument("--base", default="", help="Имя базы 1С (по умолчанию активная)")
-    test_run.add_argument("--format", choices=["text", "json"], default="text", help="Формат вывода отчёта")
-    test_run.add_argument("--screenshots-dir", type=Path, help="Каталог для сохранения скриншотов при ошибках")
-    test_run.add_argument("--stop-on-error", action="store_true", help="Остановить тестирование при первой ошибке")
-
     return root
-
 
 
 def emit(value: Any, as_json: bool = False) -> None:
@@ -489,12 +463,6 @@ def dispatch(app, args) -> Any:
             "command": open_external_agent(app, args.project_id, args.agent, args.launch),
             "internal_api_required": False,
         }
-    if command == "scan":
-        return dispatch_scan(app, args)
-    if command == "test-gen":
-        return dispatch_test_gen(app, args)
-    if command == "test-run":
-        return dispatch_test_run(app, args)
     if command == "agent":
         return dispatch_agent(app, args)
     if command == "base":
@@ -615,125 +583,3 @@ def dispatch_agent(app, args) -> Any:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-def dispatch_scan(app, args) -> Any:
-    from consultant_cli.services.scanner.models import Severity, ScanSummary
-    min_sev = Severity(args.min_severity) if args.min_severity else None
-    target_path = args.path.resolve()
-
-    if target_path.is_file():
-        issues = app.scanner.scan_file(target_path)
-        sev_counts: dict[str, int] = {}
-        cat_counts: dict[str, int] = {}
-        for issue in issues:
-            sev_counts[issue.severity.value] = sev_counts.get(issue.severity.value, 0) + 1
-            cat_counts[issue.category.value] = cat_counts.get(issue.category.value, 0) + 1
-        summary = ScanSummary(
-            total_files=1,
-            total_issues=len(issues),
-            issues_by_severity=sev_counts,
-            issues_by_category=cat_counts,
-            passed=(sev_counts.get(Severity.CRITICAL.value, 0) == 0 and sev_counts.get(Severity.HIGH.value, 0) == 0),
-            issues=issues,
-        )
-    elif target_path.is_dir():
-        summary = app.scanner.scan_directory(target_path, min_severity=min_sev)
-    else:
-        raise FileNotFoundError(f"Указанный путь не существует: {target_path}")
-
-    fmt = args.format.lower()
-    if fmt == "json":
-        result = summary.to_dict()
-        out_text = json.dumps(result, ensure_ascii=False, indent=2)
-    elif fmt == "sarif":
-        out_text = app.scanner.format_sarif_report(summary)
-        result = out_text
-    else:
-        out_text = app.scanner.format_text_report(summary)
-        result = out_text
-
-    if args.output:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(out_text, encoding="utf-8")
-
-    return result
-
-
-def dispatch_test_gen(app, args) -> Any:
-    from consultant_cli.services.testgen import WebTestGenerator, WebTestSuite
-
-    t_type = args.type
-    if t_type == "document":
-        meta = args.metadata or "ЗаказКлиента"
-        scenario = WebTestGenerator.generate_document_test(
-            doc_name=meta,
-            subsystem=args.subsystem,
-            header_fields={"Клиент": "ООО Ромашка"},
-            table_rows=[{"Номенклатура": "Товар 1", "Количество": "1", "Цена": "100"}],
-            post=True,
-        )
-        suite = WebTestSuite(
-            id=f"suite_{scenario.id}",
-            title=f"Тестовый набор для {meta}",
-            scenarios=[scenario],
-        )
-    elif t_type == "smoke":
-        sub = args.subsystem or "Основная"
-        objs = [args.metadata] if args.metadata else ["Справочник.Номенклатура", "Документ.ЗаказКлиента"]
-        suite = WebTestGenerator.generate_smoke_test(subsystem=sub, objects=objs)
-    elif t_type == "from-feature":
-        if not args.feature_file or not args.feature_file.is_file():
-            raise FileNotFoundError("Для типа from-feature необходимо указать существующий --feature-file.")
-        gherkin = args.feature_file.read_text(encoding="utf-8")
-        suite = WebTestGenerator.from_gherkin_text(gherkin, suite_title=f"BDD {args.feature_file.stem}")
-    else:
-        raise ValueError(f"Неизвестный тип теста: {t_type}")
-
-    suite_dict = suite.to_dict()
-    if args.output:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(json.dumps(suite_dict, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    return suite_dict
-
-
-def dispatch_test_run(app, args) -> Any:
-    from consultant_cli.services.testrunner import Playwright1CTestRunner
-    from consultant_cli.services.testgen import WebTestGenerator, WebTestScenario, WebTestSuite
-
-    base_name = args.base
-    cfg = app.infobases.get(base_name) if base_name else app.infobases.get_active()
-    if not cfg:
-        raise ValueError("Нет настроенных информационных баз 1С. Добавьте базу командой `consultant base add`.")
-
-    suite: Optional[WebTestSuite] = None
-    if args.feature:
-        if not args.feature.is_file():
-            raise FileNotFoundError(f"Файл .feature не найден: {args.feature}")
-        gherkin = args.feature.read_text(encoding="utf-8")
-        suite = WebTestGenerator.from_gherkin_text(gherkin, suite_title=args.feature.name)
-    elif args.scenario:
-        if not args.scenario.is_file():
-            raise FileNotFoundError(f"Файл сценария не найден: {args.scenario}")
-        data = json.loads(args.scenario.read_text(encoding="utf-8"))
-        if "scenarios" in data:
-            suite = WebTestSuite.from_dict(data)
-        elif "steps" in data:
-            sc = WebTestScenario.from_dict(data)
-            suite = WebTestSuite(id=f"suite_{sc.id}", title=sc.title, scenarios=[sc])
-        else:
-            raise ValueError("Файл не содержит допустимого сценария или набора тестов.")
-    else:
-        raise ValueError("Необходимо указать --scenario или --feature.")
-
-    runner = Playwright1CTestRunner(
-        base_config=cfg,
-        screenshot_dir=args.screenshots_dir,
-        stop_on_first_error=args.stop_on_error,
-    )
-    result = runner.run_suite(suite)
-
-    if args.format == "json":
-        return result.to_dict()
-    return Playwright1CTestRunner.format_text_report(result)

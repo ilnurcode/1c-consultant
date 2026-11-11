@@ -14,7 +14,6 @@ from consultant_cli.services.workflow import WorkflowService
 from consultant_cli.services.analytics import AnalyticsService
 from consultant_cli.services.telemetry import TelemetryService
 from consultant_cli.services.migration import MigrationService
-from consultant_cli.services.scanner import ScannerEngine
 
 
 @dataclass(slots=True)
@@ -31,7 +30,6 @@ class Application:
     telemetry: TelemetryService
     migrations: MigrationService
     infobases: InfobaseManager
-    scanner: ScannerEngine
 
 
 def build_application(start: Path | None = None) -> Application:
@@ -55,6 +53,5 @@ def build_application(start: Path | None = None) -> Application:
         telemetry=workflow.telemetry,
         migrations=MigrationService(paths, store, workflow.analytics),
         infobases=infobases,
-        scanner=ScannerEngine(),
     )
 
