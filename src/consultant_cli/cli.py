@@ -286,6 +286,13 @@ def parser() -> argparse.ArgumentParser:
     test_run.add_argument("--screenshots-dir", type=Path, help="Каталог для сохранения скриншотов при ошибках")
     test_run.add_argument("--stop-on-error", action="store_true", help="Остановить тестирование при первой ошибке")
 
+
+    # --- Web Dashboard command ---
+    web = commands.add_parser("web", help="Запустить локальный веб-интерфейс 1C-Consultant в браузере")
+    web.add_argument("--port", type=int, default=8080, help="Порт веб-сервера (по умолчанию 8080)")
+    web.add_argument("--host", default="127.0.0.1", help="Хост веб-сервера")
+    web.add_argument("--no-browser", action="store_true", help="Не открывать браузер автоматически")
+
     return root
 
 
@@ -495,6 +502,10 @@ def dispatch(app, args) -> Any:
         return dispatch_test_gen(app, args)
     if command == "test-run":
         return dispatch_test_run(app, args)
+    if command == "web":
+        from consultant_cli.web import run_web_server
+        run_web_server(app, host=args.host, port=args.port, open_browser=not args.no_browser)
+        return None
     if command == "agent":
         return dispatch_agent(app, args)
     if command == "base":

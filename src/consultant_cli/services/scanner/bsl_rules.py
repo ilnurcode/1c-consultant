@@ -472,6 +472,139 @@ class EmptyExceptionHandlerRule(BSLRule):
         return issues
 
 
+
+
+class V8StdExportMethodCommentRule(BSLRule):
+    """v8std:comment-api - Экспортные методы должны иметь документирующую шапку с описанием параметров."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            rule_id="v8std:comment-api",
+            category=IssueCategory.STANDARDS,
+            severity=Severity.LOW,
+            message="Экспортная процедура/функция не имеет описания назначения и параметров по стандарту v8std.",
+            recommendation="Добавьте перед экспортным методом комментарий по шаблону: // Описание метода... // Параметры: //   ИмяПараметра - Тип - Описание.",
+        )
+        self.export_proc_regex = re.compile(
+            r"\b(Процедура|Функция|Procedure|Function)\s+([a-zA-Zа-яА-Я0-9_]+)\s*\(.*\)\s+Экспорт\b",
+            re.IGNORECASE,
+        )
+
+    def analyze(self, file_path: str, lines: list[str]) -> list[ScanIssue]:
+        issues: list[ScanIssue] = []
+        for idx, line in enumerate(lines, 1):
+            clean = line.split("//", 1)[0].strip()
+            if not clean:
+                continue
+            match = self.export_proc_regex.search(clean)
+            if match:
+                # Check previous 3 lines for comment lines
+                has_comment = False
+                for prev_idx in range(max(0, idx - 4), idx - 1):
+                    if lines[prev_idx].strip().startswith("//"):
+                        has_comment = True
+                        break
+                if not has_comment:
+                    issues.append(
+                        ScanIssue(
+                            rule_id=self.rule_id,
+                            category=self.category,
+                            severity=self.severity,
+                            message=f"{self.message} Метод: {match.group(2)}",
+                            file_path=file_path,
+                            line=idx,
+                            col=match.start() + 1,
+                            code_fragment=line.strip()[:140],
+                            recommendation=self.recommendation,
+                        )
+                    )
+        return issues
+
+
+class V8StdNamingRule(BSLRule):
+    """v8std:naming - Именование переменных: запрет однобуквенных переменных (кроме счетчиков циклов) и латиницы в именах переменных."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            rule_id="v8std:naming",
+            category=IssueCategory.STANDARDS,
+            severity=Severity.LOW,
+            message="Нарушение стандарта именования v8std: использование однобуквенной неинформативной переменной.",
+            recommendation="Используйте осмысленные имена переменных на русском языке в нотации PascalCase (например, ДанныеСтроки, а не Д или S).",
+        )
+        self.bad_var_regex = re.compile(
+            r"\b([абвгдежзийклмнопрстуфхцчшщэюяa-z])\s*=\s*[^=]",
+            re.IGNORECASE,
+        )
+
+    def analyze(self, file_path: str, lines: list[str]) -> list[ScanIssue]:
+        issues: list[ScanIssue] = []
+        for idx, line in enumerate(lines, 1):
+            clean = line.split("//", 1)[0].strip()
+            if not clean:
+                continue
+            # Ignore loop counters like Для Сч = 1 or For i = 1
+            if re.search(r"\b(Для|For)\s+([a-zA-Zа-яА-Я0-9_]+)\s*=", clean, re.IGNORECASE):
+                continue
+            match = self.bad_var_regex.search(clean)
+            if match:
+                var_name = match.group(1)
+                # Ignore well-known exceptions if any
+                issues.append(
+                    ScanIssue(
+                        rule_id=self.rule_id,
+                        category=self.category,
+                        severity=self.severity,
+                        message=f"{self.message} Переменная '{var_name}'.",
+                        file_path=file_path,
+                        line=idx,
+                        col=match.start() + 1,
+                        code_fragment=line.strip()[:140],
+                        recommendation=self.recommendation,
+                    )
+                )
+        return issues
+
+
+class V8StdVirtualTableParamsRule(BSLRule):
+    """v8std:virtual-tables-params - Запрет отборов в ГДЕ для виртуальных таблиц вместо параметров."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            rule_id="v8std:virtual-tables-params",
+            category=IssueCategory.PERFORMANCE,
+            severity=Severity.HIGH,
+            message="Фильтрация виртуальной таблицы в секции ГДЕ вместо параметров таблицы (стандарт v8std).",
+            recommendation="Всегда передавайте условия отбора в параметры виртуальной таблицы (например, РегистрНакопления.Остатки(Период, Условие)), чтобы СУБД отбирала данные на уровне индексов.",
+        )
+        self.unparam_vt = re.compile(
+            r"\b(РегистрНакопления|РегистрБухгалтерии|РегистрСведений)\.[a-zA-Zа-яА-Я0-9_]+\.(Остатки|Обороты|ОстаткиИОбороты|СрезПоследних|СрезПервых)\s*\(\s*\)",
+            re.IGNORECASE,
+        )
+
+    def analyze(self, file_path: str, lines: list[str]) -> list[ScanIssue]:
+        issues: list[ScanIssue] = []
+        for idx, line in enumerate(lines, 1):
+            clean = line.split("//", 1)[0].strip()
+            if not clean:
+                continue
+            match = self.unparam_vt.search(clean)
+            if match:
+                issues.append(
+                    ScanIssue(
+                        rule_id=self.rule_id,
+                        category=self.category,
+                        severity=self.severity,
+                        message=self.message,
+                        file_path=file_path,
+                        line=idx,
+                        col=match.start() + 1,
+                        code_fragment=line.strip()[:140],
+                        recommendation=self.recommendation,
+                    )
+                )
+        return issues
+
 def get_default_rules() -> list[BSLRule]:
     """Returns the comprehensive set of built-in BSL security and standards rules."""
     return [
@@ -498,5 +631,16 @@ def get_default_rules() -> list[BSLRule]:
             pattern=r"\bСообщить\s*\(",
             message="Использование устаревшего метода Сообщить() в интерфейсном коде.",
             recommendation="Используйте ПоказатьОповещениеПользователя() или ОбщегоНазначенияКлиентСервер.СообщитьПользователю().",
+        ),
+        V8StdExportMethodCommentRule(),
+        V8StdNamingRule(),
+        V8StdVirtualTableParamsRule(),
+        RegexLineRule(
+            rule_id="v8std:unconditional-server-context",
+            category=IssueCategory.PERFORMANCE,
+            severity=Severity.MEDIUM,
+            pattern=r"^&НаСервере\b|^&AtServer\b",
+            message="Использование директивы &НаСервере. По стандарту v8std рекомендуется использовать &НаСервереБезКонтекста, если нет изменения реквизитов формы.",
+            recommendation="Замените на &НаСервереБезКонтекста и передавайте нужные параметры явно для снижения сетевого трафика формы.",
         ),
     ]

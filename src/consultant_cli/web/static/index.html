@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>1C-Consultant — Аудит безопасности и Web-тестирование 1С</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-logo">1С</span>
+        <div class="brand-text">
+          <h1>1C-Consultant <span>v5.0</span></h1>
+          <p>Security Auditor · v8std · Playwright Web Runner</p>
+        </div>
+      </div>
+      <div class="header-status">
+        <div class="status-chip" id="baseIndicator">
+          <span class="status-dot"></span>
+          <span id="activeBaseLabel">База: Не выбрана</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="app-nav">
+      <button class="nav-tab active" data-tab="scanner">
+        <span class="tab-icon">🛡️</span> Аудит кода и уязвимостей (BSL / v8std)
+      </button>
+      <button class="nav-tab" data-tab="testgen">
+        <span class="tab-icon">⚡</span> Генератор Web-тестов 1С
+      </button>
+      <button class="nav-tab" data-tab="testrunner">
+        <span class="tab-icon">▶️</span> Запуск тестов (Playwright)
+      </button>
+      <button class="nav-tab" data-tab="bases">
+        <span class="tab-icon">🗄️</span> Информационные базы
+      </button>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="app-main">
+
+      <!-- TAB 1: SCANNER -->
+      <section class="tab-pane active" id="pane-scanner">
+        <div class="pane-header">
+          <h2>Статический анализ BSL, аудит безопасности и стандарты v8std</h2>
+          <p>Поиск инъекций кода, SQL/1C query injection, дедлоков в ОбработкаПроведения, серверных вызовов в цикле и нарушений стандартов 1С.</p>
+        </div>
+
+        <div class="scanner-controls">
+          <div class="input-mode-group">
+            <button class="btn-sub active" id="btnModeCode">Ввод BSL кода</button>
+            <button class="btn-sub" id="btnModePath">Путь к файлу / каталогу</button>
+          </div>
+
+          <div class="scan-inputs">
+            <div id="codeScanBox">
+              <label for="bslCodeInput">Исходный код BSL:</label>
+              <textarea id="bslCodeInput" rows="12" spellcheck="false" placeholder="Вставьте код модуля 1С для анализа..."></textarea>
+            </div>
+            <div id="pathScanBox" style="display: none;">
+              <label for="pathInput">Абсолютный или относительный путь к каталогу выгрузки / BSL файлу:</label>
+              <input type="text" id="pathInput" placeholder="Например: ./demo_extension или C:\Bases\Dump">
+            </div>
+          </div>
+
+          <div class="action-bar">
+            <button class="btn btn-primary" id="btnRunScan">
+              <span>🔍</span> Запустить аудит безопасности
+            </button>
+            <button class="btn btn-secondary" id="btnLoadSampleVulnerable">
+              Загрузить пример с уязвимостями
+            </button>
+          </div>
+        </div>
+
+        <div class="results-container" id="scanResults" style="display: none;">
+          <div class="stats-cards">
+            <div class="card stat-total">
+              <span class="stat-num" id="statTotalIssues">0</span>
+              <span class="stat-label">Всего замечаний</span>
+            </div>
+            <div class="card stat-critical">
+              <span class="stat-num" id="statCritical">0</span>
+              <span class="stat-label">Критичные (RCE / Security)</span>
+            </div>
+            <div class="card stat-high">
+              <span class="stat-num" id="statHigh">0</span>
+              <span class="stat-label">Высокие (Запросы / Блокировки)</span>
+            </div>
+            <div class="card stat-status">
+              <span class="stat-num" id="statStatus">OK</span>
+              <span class="stat-label">Вердикт</span>
+            </div>
+          </div>
+
+          <div class="issues-list" id="issuesList"></div>
+        </div>
+      </section>
+
+      <!-- TAB 2: TESTGEN -->
+      <section class="tab-pane" id="pane-testgen">
+        <div class="pane-header">
+          <h2>Генератор Playwright тестов для 1C:Enterprise Web Client</h2>
+          <p>Создание сквозных автоматизированных сценариев создания документов, заполнения табличных частей, проведения и проверки движений через OData.</p>
+        </div>
+
+        <div class="card gen-form-card">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Тип сценария:</label>
+              <select id="genTestType">
+                <option value="document">Документ (Создание, заполнение, проведение)</option>
+                <option value="smoke">Smoke-тест (Проверка открытия форм подсистемы)</option>
+                <option value="from-feature">Импорт из Vanessa Automation (.feature)</option>
+              </select>
+            </div>
+            <div class="form-group" id="groupMetadata">
+              <label>Имя объекта метаданных:</label>
+              <input type="text" id="genMetadata" value="Документ.ЗаказКлиента">
+            </div>
+            <div class="form-group" id="groupSubsystem">
+              <label>Подсистема 1С:</label>
+              <input type="text" id="genSubsystem" value="Продажи">
+            </div>
+          </div>
+
+          <div class="form-group" id="groupGherkin" style="display: none;">
+            <label>Текст сценария Vanessa Automation (Gherkin):</label>
+            <textarea id="genGherkin" rows="8" placeholder="Сценарий: Проведение заказа
+  И В командном интерфейсе я выбираю 'Продажи' 'Заказы клиентов'
+  И я нажимаю на кнопку 'Создать'..."></textarea>
+          </div>
+
+          <button class="btn btn-primary" id="btnGenerateTest">
+            <span>⚡</span> Сгенерировать Playwright сценарий
+          </button>
+        </div>
+
+        <div class="generated-output-box" id="genOutputBox" style="display: none;">
+          <h3>Сгенерированный сценарий (JSON для Playwright Runner):</h3>
+          <pre><code id="genJsonOutput"></code></pre>
+          <div class="action-bar">
+            <button class="btn btn-success" id="btnSendToRunner">
+              <span>▶️</span> Отправить в Runner и запустить
+            </button>
+            <button class="btn btn-secondary" id="btnCopyJson">Скопировать JSON</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: TESTRUNNER -->
+      <section class="tab-pane" id="pane-testrunner">
+        <div class="pane-header">
+          <h2>Исполнение тестов в 1C Web Client через Playwright</h2>
+          <p>Автоматизированный запуск сценариев без сторонних утилит с проверкой интерактивных элементов, транзакций и фиксацией скриншотов при ошибках.</p>
+        </div>
+
+        <div class="card runner-config-card">
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Целевая база 1С:</label>
+              <select id="runnerSelectBase"></select>
+            </div>
+            <div class="form-group">
+              <label>Режим выполнения браузера:</label>
+              <select id="runnerBrowserMode">
+                <option value="headless">Фоновый режим (Headless — без всплытия окна)</option>
+                <option value="visual">Визуальный режим (Watch — наблюдать за действиями)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Сценарий для выполнения (JSON):</label>
+            <textarea id="runnerScenarioInput" rows="7" placeholder="Вставьте JSON сценарий или сгенерируйте во вкладке 'Генератор'"></textarea>
+          </div>
+
+          <button class="btn btn-primary" id="btnStartTestRun">
+            <span>🚀</span> Запустить тест в Веб-клиенте 1С
+          </button>
+        </div>
+
+        <div class="test-run-monitor" id="runnerResults" style="display: none;">
+          <div class="monitor-header">
+            <h3 id="monitorTitle">Протокол выполнения:</h3>
+            <span class="badge" id="monitorStatusBadge">В процессе...</span>
+          </div>
+          <div class="step-trace" id="monitorStepList"></div>
+        </div>
+      </section>
+
+      <!-- TAB 4: BASES -->
+      <section class="tab-pane" id="pane-bases">
+        <div class="pane-header">
+          <h2>Подключения к информационным базам 1С</h2>
+          <p>Настройка адресов веб-клиента и OData сервиса для автоматизированных тестов.</p>
+        </div>
+
+        <div class="card add-base-card">
+          <h3>Добавить подключение к базе:</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Имя базы:</label>
+              <input type="text" id="baseName" placeholder="My1CBase">
+            </div>
+            <div class="form-group">
+              <label>Web Client URL:</label>
+              <input type="text" id="baseWebUrl" placeholder="http://localhost/demo">
+            </div>
+            <div class="form-group">
+              <label>OData URL (опционально):</label>
+              <input type="text" id="baseOdataUrl" placeholder="http://localhost/demo/odata/standard.odata">
+            </div>
+            <div class="form-group">
+              <label>Пользователь 1С:</label>
+              <input type="text" id="baseUser" placeholder="Администратор">
+            </div>
+            <div class="form-group">
+              <label>Пароль:</label>
+              <input type="password" id="basePass" placeholder="••••••••">
+            </div>
+            <div class="form-group">
+              <label>Браузер:</label>
+              <select id="baseBrowser">
+                <option value="msedge">Microsoft Edge (рекомендуется на Windows)</option>
+                <option value="chromium">Chromium</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-primary" id="btnSaveBase">Сохранить базу</button>
+        </div>
+
+        <div class="bases-list-container" id="basesList"></div>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

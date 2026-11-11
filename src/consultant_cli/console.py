@@ -114,6 +114,7 @@ def run_menu(app: Application) -> int:
                 ("6", "Система и справка", "База знаний, проверка и помощь"),
                 ("7", "Аудит кода 1С", "Поиск уязвимостей, дедлоков и ошибок в BSL"),
                 ("8", "Тестирование Веб-клиента", "Генерация и запуск Playwright тестов в 1С"),
+                ("9", "Веб-интерфейс (Browser)", "Запустить локальный веб-дашборд в браузере"),
                 ("0", "Выход", "Закрыть приложение"),
             ]
         )
@@ -141,6 +142,9 @@ def run_menu(app: Application) -> int:
             scan_code_wizard(app)
         elif choice == "8":
             web_testing_wizard(app)
+        elif choice == "9":
+            from consultant_cli.web import run_web_server
+            run_web_server(app)
 
 
 def new_project_wizard(app: Application):
